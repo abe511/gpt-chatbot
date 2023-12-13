@@ -1,7 +1,19 @@
 import { Request, Response } from "express";
 import OpenAI from "openai";
+import GPT4Tokenizer from "gpt4-tokenizer";
 import { session, resetSession } from "../database/db";
 
+let TOKEN_COUNT = 0;
+
+const countTokens = (str: string | null | OpenAI.Chat.Completions.ChatCompletionContentPart[], model: string = process.env.MODEL || "gpt-3.5-turbo") => {
+  const tokenizer = new GPT4Tokenizer({type: model.includes("gpt-4") ? "gpt4" : "gpt3"});
+  if(str) {
+    const estimatedTokenCount: number = tokenizer.estimateTokenCount(str.toString());
+    TOKEN_COUNT += estimatedTokenCount;
+    return estimatedTokenCount;
+  }
+  return 0;
+};
 
 const setContext = (messages: OpenAI.Chat.Completions.ChatCompletionMessage[]) => {
 
@@ -10,14 +22,20 @@ const setContext = (messages: OpenAI.Chat.Completions.ChatCompletionMessage[]) =
     session.push({role: "system", content: msg});
   }
 
+  // update session with "user" messages
+  // "system" message resets the session
   messages.forEach((msg: OpenAI.Chat.Completions.ChatCompletionMessageParam) => {
+    const tokenCount: number = countTokens(msg.content);
     if(msg.role === "system") {
+      TOKEN_COUNT = 0;
       resetSession();
       session[0] = {role: "system", content: msg.content};
     } else {
       session.push({role: "user", content: msg.content});
     }
+    TOKEN_COUNT += tokenCount;
   })
+
 }
 
 
@@ -26,7 +44,7 @@ async function completion() {
   const openai: OpenAI = new OpenAI(
     {apiKey: process.env.OPENAI_API_KEY}
   );
-
+  
   const params: OpenAI.Chat.ChatCompletionCreateParams = {
     messages: session,
     model: process.env.MODEL || "gpt-3.5-turbo",
@@ -42,26 +60,58 @@ async function completion() {
 } 
 
 
+const trimSession = (messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[]) => {
+  let total = 0;
+  let i = messages.length - 1;
+  let limit = 0;
+  if(Number(process.env.TOKEN_LIMIT)) {
+    limit = Number(process.env.TOKEN_LIMIT);
+  }
+    
+  let completionBuffer = Math.floor(limit / 4);
+
+  for(; i > 0; --i) {
+    total += countTokens(messages[i].content);
+    if(total >= limit - completionBuffer) {
+      break;
+    }
+  }
+
+  while(i--) {
+    session.shift();
+  }
+  // 12 tokens for this instruction
+  session.push({role: "user", content: `Use no more than ${limit - total - 12} tokens for the answer.`});
+
+  return total;
+};
+
+
 export const prompt = (req: Request, res: Response) => {
 
-  if(req.method === "GET") {
-    return res.json("use a POST request");
-  }
-
-  if(!req.body.messages.length || !("role" in req.body.messages[0] && "content" in req.body.messages[0])) {
-    return res.json("please provide a correctly formatted JSON object")
-  }
-  
-  setContext(req.body.messages);
-  completion().then((data) => {
-    if (data?.choices[0]?.message) {
-      session.push(data.choices[0].message);
-      return res.json(session[session.length - 1].content);
-    } else {
-      throw Error("No data");
+  try {
+    
+    if(req.method === "GET") {
+      return res.json("use a POST request");
     }
-  })
-  .catch((err) => {
-    return res.json(`error: ${err}`);
-  });
+  
+    if(!req.body.messages.length || !("role" in req.body.messages[0] && "content" in req.body.messages[0])) {
+      return res.json("please provide a correctly formatted JSON object")
+    }
+    setContext(req.body.messages);
+    trimSession(session);
+    completion().then((data) => {
+      if (data?.choices[0]?.message) {
+        session.push(data.choices[0].message);
+        return res.json(session[session.length - 1].content);
+      } else {
+        throw Error("No data");
+      }
+    })
+    .catch((err) => {
+      return res.json(`error: ${err}`);
+    });
+  } catch (e) {
+    console.log(e);
+  }
 };
