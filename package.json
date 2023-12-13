@@ -1,0 +1,30 @@
+{
+  "name": "chatgpt-test",
+  "version": "1.0.0",
+  "description": "chatgpt test app",
+  "main": "dist/app.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/app.js",
+    "dev": "nodemon src/app.ts"
+  },
+  "author": "ab",
+  "license": "MIT",
+  "dependencies": {
+    "axios": "^1.3.5",
+    "cors": "^2.8.5",
+    "dotenv": "^10.0.0",
+    "express": "^4.18.2",
+    "gpt4-tokenizer": "^1.3.0",
+    "openai": "^4.20.1"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.12",
+    "@types/express": "^4.17.17",
+    "@types/node": "^16.11.7",
+    "nodemon": "^2.0.15",
+    "ts-node": "^10.9.1",
+    "tslib": "^2.6.2",
+    "typescript": "^4.5.4"
+  }
+}
