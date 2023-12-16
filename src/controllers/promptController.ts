@@ -3,17 +3,16 @@ import OpenAI from "openai";
 import GPT4Tokenizer from "gpt4-tokenizer";
 import { session, resetSession } from "../database/db";
 
-let TOKEN_COUNT = 0;
 
 const countTokens = (str: string | null | OpenAI.Chat.Completions.ChatCompletionContentPart[], model: string = process.env.MODEL || "gpt-3.5-turbo") => {
   const tokenizer = new GPT4Tokenizer({type: model.includes("gpt-4") ? "gpt4" : "gpt3"});
   if(str) {
     const estimatedTokenCount: number = tokenizer.estimateTokenCount(str.toString());
-    TOKEN_COUNT += estimatedTokenCount;
     return estimatedTokenCount;
   }
   return 0;
 };
+
 
 const setContext = (messages: OpenAI.Chat.Completions.ChatCompletionMessage[]) => {
 
@@ -25,17 +24,13 @@ const setContext = (messages: OpenAI.Chat.Completions.ChatCompletionMessage[]) =
   // update session with "user" messages
   // "system" message resets the session
   messages.forEach((msg: OpenAI.Chat.Completions.ChatCompletionMessageParam) => {
-    const tokenCount: number = countTokens(msg.content);
     if(msg.role === "system") {
-      TOKEN_COUNT = 0;
       resetSession();
       session[0] = {role: "system", content: msg.content};
     } else {
       session.push({role: "user", content: msg.content});
     }
-    TOKEN_COUNT += tokenCount;
   })
-
 }
 
 
@@ -62,13 +57,9 @@ async function completion() {
 
 const trimSession = (messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[]) => {
   let total = 0;
-  let i = messages.length - 1;
-  let limit = 0;
-  if(Number(process.env.TOKEN_LIMIT)) {
-    limit = Number(process.env.TOKEN_LIMIT);
-  }
-    
+  let limit = Number(process.env.TOKEN_LIMIT) ? Number(process.env.TOKEN_LIMIT) : 0;
   let completionBuffer = Math.floor(limit / 4);
+  let i = messages.length - 1;
 
   for(; i > 0; --i) {
     total += countTokens(messages[i].content);
